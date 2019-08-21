@@ -18,10 +18,10 @@ import os
 import matplotlib.pyplot as plt
 
 # Set paths for tensorboard and checkpoints
-FILEWRITER_PATH = './AE_tensorboard'
+FILEWRITER_PATH = './RAE_tensorboard'
 if not os.path.isdir(FILEWRITER_PATH):
     os.makedirs(FILEWRITER_PATH)
-CHECKPOINT_PATH = './AE_tensorboard/checkpoints'
+CHECKPOINT_PATH = './RAE_tensorboard/checkpoints'
 if not os.path.isdir(CHECKPOINT_PATH):
     os.makedirs(CHECKPOINT_PATH)
 
@@ -33,8 +33,8 @@ signal_length = 250
 num_hidden_nodes = 40
 
 # Training Parameters
-batch_size = 9000
-val_batch_size = 9000
+batch_size = 10000
+val_batch_size = 10000
 
 # ------------------------------------------------- loading data ----------------------------------------------------- #
 # define function to load the data
@@ -50,7 +50,7 @@ def load_data(data_path, signal_length):
     # the original data is in None x 1000 shape
     new_data = []
     for datanum in range(len(data)):
-        for index in range(0, 1000-signal_length, 50):
+        for index in range(0, 750, 50):
             a = data[datanum, index:index + signal_length].copy()
             a = a - np.min(a)  # normalize the samples
             a = a / np.max(a)
@@ -59,36 +59,37 @@ def load_data(data_path, signal_length):
     data = np.asarray(new_data)
     answer_data = data.copy()
 
-    # #실습8: dataset에 노이즈를 추가해서 denoising autoencoder를 학습시키세요============================================
-    # noisy_data = []
-    # answer_data = []
-    # for datanum in range(len(data)):
-    #     dummy = data[datanum, :].copy()
-    #     # 노이즈1: 고주파
-    #     noise1 =
-    #     dummy = dummy + noise1
-    #     dummy = dummy - min(dummy)
-    #     dummy = dummy / max(dummy)
-    #
-    #     # 노이즈2: 저주파
-    #     noise2 =
-    #     for i in range(len(dummy)):
-    #         dummy[i] =
-    #     dummy = dummy - min(dummy)
-    #     dummy = dummy / max(dummy)
-    #
-    #     # 노이즈3: saturation
-    #     location1 =
-    #     location2 =
-    #     if location2 > signal_length:
-    #         location2 = signal_length
-    #     dummy[location1:location2] =
-    #
-    #     noisy_data.append(dummy)
-    #     answer_data.append(data[datanum, :])
-    #
-    # data = np.asarray(noisy_data)
-    # answer_data = np.asarray(answer_data)
+    #실습8: dataset에 노이즈를 추가해서 denoising autoencoder를 학습시키세요============================================
+    noisy_data = []
+    answer_data = []
+    for datanum in range(len(data)):
+        for generation_num in range(5):
+            dummy = data[datanum, :].copy()
+            # high frequency noise
+            noise1 = np.random.randn(signal_length) / 3
+            dummy = dummy + noise1
+            dummy = dummy - min(dummy)
+            dummy = dummy / max(dummy)
+
+            # sloping noise
+            noise2 = (np.random.rand(1) - 0.5) * -4
+            for i in range(len(dummy)):
+                dummy[i] = dummy[i] + noise2 * i / len(dummy)
+            dummy = dummy - min(dummy)
+            dummy = dummy / max(dummy)
+
+            # saturation noise
+            location1 = int(np.floor(np.random.rand(1) * signal_length))
+            location2 = location1 + int(np.floor(np.random.rand(1) * signal_length / 5))
+            if location2 > signal_length:
+                location2 = signal_length
+            dummy[location1:location2] = np.round(np.random.rand(1)) * np.ones((location2 - location1), float)
+
+            noisy_data.append(dummy)
+            answer_data.append(data[datanum, :])
+
+    data = np.asarray(noisy_data)
+    answer_data = np.asarray(answer_data)
 
     # create empty lists for training and validation data
     train_input_data_list = []
@@ -114,42 +115,45 @@ def load_data(data_path, signal_length):
 print('data loading completed! %i training data and %i validation data' % (len(train_input), len(val_input)))
 
 # ------------------------------------ defining graph input and network structure ------------------------------------ #
-# define placeholders
+
+# 실습9: autoencoder를 recurrent autoencoder로 변경해보세요 ===========================================================
+
+print(np.shape(train_input))
+train_input = np.reshape(train_input, [len(train_input), signal_length, 1])
+print(np.shape(train_input))
+val_input = np.reshape(val_input, [len(val_input), signal_length, 1])
 prob = tf.placeholder_with_default(1.0, shape=())
-X = tf.placeholder("float", [None, signal_length])
+X = tf.placeholder("float", [None, signal_length, 1])
 Y = tf.placeholder("float", [None, signal_length])
 
-# 실습6: autoencoder를 5 layer로 변경해보세요 ==========================================================================
-# define autoencoder as a function
-def AE(x, probability, num_hidden_nodes):
-    # define hidden layer
-    # 실습5: hidden layer의 노드수와 activation function을 변경해보세요 ================================================
-    encode = tf.layers.dense(x, num_hidden_nodes, activation=tf.nn.sigmoid,
-                          use_bias=True, name='encoding_layer',
-                          kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                          bias_initializer=tf.ones_initializer())
-    encode = tf.layers.dropout(encode, rate=probability)
-    print(encode.get_shape())
+def RAE(x, probability, num_hidden_nodes):
+    # Unstack to get a list of 'timesteps' tensors of shape (batch_size, n_input)
+    # before unstacking shape = batch_size, timesteps, num_input
+    x = tf.unstack(tf.transpose(x, perm=[1, 0, 2]))
+    # x = tf.unstack(x, signal_length, 1)
+    # after unstacking shape = timesteps, batch_size, num_input
 
-    # define output layer
-    # 실습4: output layer에 activation function을 추가해보세요 =========================================================
-    logit = tf.layers.dense(encode, signal_length, activation=None,
-                             use_bias=True, name='output_layer',
-                             kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                             bias_initializer=tf.ones_initializer())
-    logit = tf.layers.dropout(logit, rate=probability)
+    lstm_fw_cell = rnn.LSTMCell(num_hidden_nodes, forget_bias=1.0)
+    lstm_fw_cell = rnn.DropoutWrapper(cell=lstm_fw_cell, output_keep_prob=probability)
+
+    outputs, _ = rnn.static_rnn(lstm_fw_cell, x, dtype=tf.float32)
+    print(outputs[-1].get_shape())
+
+    # Linear activation, using rnn inner loop last output
+    logit = tf.layers.dense(outputs[-1], signal_length, activation=None,
+                            use_bias=True, name='output_layer',
+                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                            bias_initializer=tf.ones_initializer())
     print(logit.get_shape())
 
     return logit
 
 # define 'prediction' as the output of the autoencoder
-prediction = AE(X, prob, num_hidden_nodes)
+prediction = RAE(X, prob, num_hidden_nodes)
 
-# 실습3: loss function을 L1으로 변경하고 학습 결과를 비교하세요 ======================================================
 # define 'loss' as L2 loss function
 loss = tf.losses.mean_squared_error(Y, prediction)
 
-# 실습2: optimizer를 변경하고 학습 결과를 비교하세요 =================================================================
 # define optimizer
 optimizer = tf.train.AdamOptimizer(learning_rate=0.01).minimize(loss)
 
@@ -170,6 +174,7 @@ with tf.Session() as sess:
     # pick a goal for the loss value
     old_loss = 0.02
     train_loss_epochs = []
+    train_loss_epochs2 = []
     val_loss_epochs = []
     # set the number of iterations (epochs) for training & validation
     for epoch in range(300):
@@ -200,9 +205,21 @@ with tf.Session() as sess:
 
         # 실습1: training과 비슷하게 validation을 만드세요 ============================================================
         # validation 할때는 dropout을 끄세요
+        # create a variable to hold validation loss value after each epoch
+        val_loss = 0
+        # set a for-loop to go through the validation set
+        for j in range(total_val_batch):
 
+            batch_index1 = j * val_batch_size
 
-        """
+            val_batch = val_input[batch_index1:batch_index1 + val_batch_size]
+            val_label = val_output[batch_index1:batch_index1 + val_batch_size]
+
+            loss2, output_val = sess.run([loss, prediction], feed_dict={X: val_batch, Y: val_label})
+            val_loss += loss2 / total_val_batch
+
+        val_loss_epochs.append(val_loss)
+
         # after every 5 epochs, create a figure to save the output of the autoencoder
         if epoch % 5 == 0:
             output_val = sess.run(prediction, feed_dict={X: val_batch, Y: val_label})
@@ -214,31 +231,28 @@ with tf.Session() as sess:
             plt.plot(val_batch[random_index], color='k')
             plt.xlabel('samples')
             plt.ylabel('PPG')
-            
+
             train_loss_plot = np.asarray(train_loss_epochs)
             val_loss_plot = np.asarray(val_loss_epochs)
             plt.subplot(1, 2, 2)
             plt.plot(train_loss_plot, color='g')
             plt.plot(val_loss_plot, color='b')
-            plt.savefig('PPG_AE_result_example_'+str(signal_length)+'samples_'+str(num_hidden_nodes)+'nodes_'+str(epoch)+'_epoch.png')
+            plt.savefig('PPG_RAE_result_example_'+str(signal_length)+'samples_'+str(num_hidden_nodes)+'nodes_'+str(epoch)+'_epoch.png')
 
         # save the neural network state if the loss value is lower than the goal
-        if val_loss < old_loss:
+        if 1:  # val_loss < old_loss:
             # update the goal for the loss value
             old_loss = val_loss
-
             # save checkpoint
-            checkpoint_name = os.path.join(CHECKPOINT_PATH, 'PPG_AE_' + str(num_hidden_nodes) + 'nodes_' + str(
+            checkpoint_name = os.path.join(CHECKPOINT_PATH, 'PPG_RAE_' + str(num_hidden_nodes) + 'nodes_' + str(
                                                signal_length) + 'sample_epoch')
             save_path = saver.save(sess, checkpoint_name, global_step=epoch)
-        """
-        # 실습7: 0, 0.5, 1로만 구성된 1x250 데이터를 만들고 autoencoder에 넣어서 출력을 확인해보세요
 
         # print the result of the optimization after each epoch
         print('-----------------------------------------------------------------------------')
         print("Epoch: %d " % epoch)
         print('training loss: %f' % train_loss)
-        # print('val loss: %f' % val_loss)
-        # print('min loss: %f' % old_loss)
+        print('val loss: %f' % val_loss)
+        print('min loss: %f' % old_loss)
 
     sess.close()
