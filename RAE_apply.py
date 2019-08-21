@@ -169,89 +169,40 @@ with tf.Session() as sess:
     writer = tf.summary.FileWriter(FILEWRITER_PATH)
     # Saver
     saver = tf.train.Saver(max_to_keep=200)
+    # restore checkpoint ==============================================================================================
+    latest_ckpt = tf.train.latest_checkpoint(CHECKPOINT_PATH)
+    print("loading the lastest checkpoint: " + latest_ckpt)
+    saver.restore(sess, latest_ckpt)
 
     # pick a goal for the loss value
-    old_loss = 0.02
-    train_loss_epochs = []
-    train_loss_epochs2 = []
     val_loss_epochs = []
-    # set the number of iterations (epochs) for training & validation
-    for epoch in range(300):
-        # shuffle the training data at the beginning of each iteration for better generalization
-        if 1:
-            d = list(zip(train_input, train_output))
-            shuffle(d)
-            train_input, train_output = zip(*d)
-        # create a variable to hold training loss value after each epoch
-        train_loss = 0
-        # set a for-loop to go through the training set
-        for i in range(total_batch):
+    val_loss = 0
+    # set a for-loop to go through the validation set
+    for j in range(total_val_batch):
 
-            # set index for training data batch
-            batch_index = i * batch_size
+        batch_index1 = j * val_batch_size
 
-            # extract training data batch
-            batch = train_input[batch_index:batch_index + batch_size]
-            label = train_output[batch_index:batch_index + batch_size]
+        val_batch = val_input[batch_index1:batch_index1 + val_batch_size]
+        val_label = val_output[batch_index1:batch_index1 + val_batch_size]
 
-            # run optimizer and calculate loss
-            _, loss1 = sess.run([optimizer, loss], feed_dict={X: batch, Y: label, prob: 0.5})
+        loss2, output_val = sess.run([loss, prediction], feed_dict={X: val_batch, Y: val_label})
+        val_loss += loss2 / total_val_batch
 
-            # add loss at end of batch to the total training loss for this epoch
-            train_loss += loss1/total_batch
+    val_loss_epochs.append(val_loss)
 
-        train_loss_epochs.append(train_loss)
+    output_val = sess.run(prediction, feed_dict={X: val_batch, Y: val_label})
+    random_index = np.random.randint(0, len(val_batch))
+    figure = plt.figure(figsize=(14, 6))
+    plt.subplot(1, 2, 1)
+    plt.plot(output_val[random_index], color='g')
+    plt.plot(val_label[random_index], color='b')
+    plt.plot(val_batch[random_index], color='k')
+    plt.xlabel('samples')
+    plt.ylabel('PPG')
 
-        # 실습1: training과 비슷하게 validation을 만드세요 ============================================================
-        # validation 할때는 dropout을 끄세요
-        # create a variable to hold validation loss value after each epoch
-        val_loss = 0
-        # set a for-loop to go through the validation set
-        for j in range(total_val_batch):
-
-            batch_index1 = j * val_batch_size
-
-            val_batch = val_input[batch_index1:batch_index1 + val_batch_size]
-            val_label = val_output[batch_index1:batch_index1 + val_batch_size]
-
-            loss2, output_val = sess.run([loss, prediction], feed_dict={X: val_batch, Y: val_label})
-            val_loss += loss2 / total_val_batch
-
-        val_loss_epochs.append(val_loss)
-
-        # after every 5 epochs, create a figure to save the output of the autoencoder
-        if epoch % 5 == 0:
-            output_val = sess.run(prediction, feed_dict={X: val_batch, Y: val_label})
-            random_index = np.random.randint(0, len(val_batch))
-            figure = plt.figure(figsize=(14, 6))
-            plt.subplot(1, 2, 1)
-            plt.plot(output_val[random_index], color='g')
-            plt.plot(val_label[random_index], color='b')
-            plt.plot(val_batch[random_index], color='k')
-            plt.xlabel('samples')
-            plt.ylabel('PPG')
-
-            train_loss_plot = np.asarray(train_loss_epochs)
-            val_loss_plot = np.asarray(val_loss_epochs)
-            plt.subplot(1, 2, 2)
-            plt.plot(train_loss_plot, color='g')
-            plt.plot(val_loss_plot, color='b')
-            plt.savefig('PPG_RAE_result_example_'+str(signal_length)+'samples_'+str(num_hidden_nodes)+'nodes_'+str(epoch)+'_epoch.png')
-
-        # save the neural network state if the loss value is lower than the goal
-        if 1:  # val_loss < old_loss:
-            # update the goal for the loss value
-            old_loss = val_loss
-            # save checkpoint
-            checkpoint_name = os.path.join(CHECKPOINT_PATH, 'PPG_RAE_' + str(num_hidden_nodes) + 'nodes_' + str(
-                                               signal_length) + 'sample_epoch')
-            save_path = saver.save(sess, checkpoint_name, global_step=epoch)
-
-        # print the result of the optimization after each epoch
-        print('-----------------------------------------------------------------------------')
-        print("Epoch: %d " % epoch)
-        print('training loss: %f' % train_loss)
-        print('val loss: %f' % val_loss)
-        print('min loss: %f' % old_loss)
+    val_loss_plot = np.asarray(val_loss_epochs)
+    plt.subplot(1, 2, 2)
+    plt.plot(val_loss_plot, color='b')
+    plt.savefig('PPG_RAE_result_example_'+str(signal_length)+'samples_'+str(num_hidden_nodes)+'.png')
 
     sess.close()
