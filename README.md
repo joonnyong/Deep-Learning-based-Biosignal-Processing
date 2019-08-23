@@ -19,3 +19,6 @@ RAE_apply.py             :    recurrent autoencoder의 틀을 가지고 있는 p
 
 RAE_practice_solution.py :    recurrent autoencoder를 구현한 python 예제.
 
+external_val1.txt        :    ~5min of PPG recorded at 125Hz on the torso, lots of noises (마지막 실습에 활용)
+
+external_val2.txt        :    ~5min of PPG recorded at 125Hz on the torso, lots of noises (마지막 실습에 활용)
