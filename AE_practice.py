@@ -116,19 +116,20 @@ print('data loading completed! %i training data and %i validation data' % (len(t
 # ------------------------------------ defining graph input and network structure ------------------------------------ #
 # define placeholders
 prob = tf.placeholder_with_default(1.0, shape=())
+is_training = tf.placeholder_with_default(False, shape=())
 X = tf.placeholder("float", [None, signal_length])
 Y = tf.placeholder("float", [None, signal_length])
 
 # 실습6: autoencoder를 5 layer로 변경해보세요 ==========================================================================
 # define autoencoder as a function
-def AE(x, probability, num_hidden_nodes):
+def AE(x, probability, num_hidden_nodes, training_true):
     # define hidden layer
     # 실습5: hidden layer의 노드수와 activation function을 변경해보세요 ================================================
     encode = tf.layers.dense(x, num_hidden_nodes, activation=tf.nn.sigmoid,
                           use_bias=True, name='encoding_layer',
                           kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
                           bias_initializer=tf.ones_initializer())
-    encode = tf.layers.dropout(encode, rate=probability)
+    encode = tf.layers.dropout(encode, rate=probability, training=training_true)
     print(encode.get_shape())
 
     # define output layer
@@ -137,13 +138,12 @@ def AE(x, probability, num_hidden_nodes):
                              use_bias=True, name='output_layer',
                              kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
                              bias_initializer=tf.ones_initializer())
-    logit = tf.layers.dropout(logit, rate=probability)
     print(logit.get_shape())
 
     return logit
 
 # define 'prediction' as the output of the autoencoder
-prediction = AE(X, prob, num_hidden_nodes)
+prediction = AE(X, prob, num_hidden_nodes, is_training)
 
 # 실습3: loss function을 L1으로 변경하고 학습 결과를 비교하세요 ======================================================
 # define 'loss' as L2 loss function
@@ -151,7 +151,7 @@ loss = tf.losses.mean_squared_error(Y, prediction)
 
 # 실습2: optimizer를 변경하고 학습 결과를 비교하세요 =================================================================
 # define optimizer
-optimizer = tf.train.AdamOptimizer(learning_rate=0.01).minimize(loss)
+optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(loss)
 
 # Initialize the variables (i.e. assign their default value)
 init = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
@@ -168,13 +168,13 @@ with tf.Session() as sess:
     saver = tf.train.Saver(max_to_keep=200)
 
     # pick a goal for the loss value
-    old_loss = 0.02
+    old_loss = 0.03
     train_loss_epochs = []
     val_loss_epochs = []
     # set the number of iterations (epochs) for training & validation
     for epoch in range(300):
         # shuffle the training data at the beginning of each iteration for better generalization
-        if 1:
+        if True:
             d = list(zip(train_input, train_output))
             shuffle(d)
             train_input, train_output = zip(*d)
@@ -190,8 +190,9 @@ with tf.Session() as sess:
             batch = train_input[batch_index:batch_index + batch_size]
             label = train_output[batch_index:batch_index + batch_size]
 
+
             # run optimizer and calculate loss
-            _, loss1 = sess.run([optimizer, loss], feed_dict={X: batch, Y: label, prob: 0.5})
+            _, loss1 = sess.run([optimizer, loss], feed_dict={X: batch, Y: label, prob: 0.5, is_training: True})
 
             # add loss at end of batch to the total training loss for this epoch
             train_loss += loss1/total_batch
